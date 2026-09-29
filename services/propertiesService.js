@@ -72,7 +72,7 @@ async function ensureHost(db, host_id, host) {
   if (host && host.name) {
     const hostName = String(host.name);
     const hostPic = host.picture || null;
-    const found = await db.getAsync('SELECT id FROM users WHERE name = ? AND IFNULL(picture, "") = IFNULL(?, "")', [hostName, hostPic]);
+    const found = await db.getAsync("SELECT id FROM users WHERE name = ? AND IFNULL(picture, '') = IFNULL(?, '')", [hostName, hostPic]);
     if (found) return found.id;
     const ins = await db.runAsync('INSERT INTO users(name, picture, role) VALUES (?,?,?)', [hostName, hostPic, 'owner']);
     return ins.lastID;

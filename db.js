@@ -192,7 +192,7 @@ async function seedIfEmpty(db) {
     const hostName = p.host && p.host.name ? p.host.name : 'Unknown';
     const hostPic = p.host && p.host.picture ? p.host.picture : null;
 
-    let user = await db.getAsync('SELECT id FROM users WHERE name = ? AND IFNULL(picture, "") = IFNULL(?, "")', [hostName, hostPic]);
+    let user = await db.getAsync("SELECT id FROM users WHERE name = ? AND IFNULL(picture, '') = IFNULL(?, '')", [hostName, hostPic]);
     if (!user) {
       const ins = await db.runAsync('INSERT INTO users(name, picture, role) VALUES (?,?,?)', [hostName, hostPic, 'owner']);
       user = { id: ins.lastID };
