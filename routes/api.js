@@ -34,8 +34,6 @@ router.post('/properties/:id/favorite', requireAuth, favorites.addForProperty);
 router.delete('/properties/:id/favorite', requireAuth, favorites.removeForProperty);
 router.get('/users/:id/favorites', requireSelfOrAdmin('id'), favorites.listForUser);
 
-// Uploads
-router.post('/uploads/image', requireRole(['owner','admin']), uploads.uploadImage);
 
 // Delete one or multiple uploaded images by filename or URL
 router.delete('/uploads/images', requireRole(['owner','admin']), uploads.deleteImages);

@@ -1,26 +1,35 @@
 const path = require('path');
 const fs = require('fs');
-const sqlite3 = require('sqlite3').verbose();
-const { promisify } = require('util');
+const { createClient } = require('@libsql/client');
 
-const DB_PATH = path.join(__dirname, 'data', 'kasa.sqlite3');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const DB_PATH = path.join(DATA_DIR, 'kasa.sqlite3');
 const PROPS_JSON_PATH = path.join(__dirname, 'data', 'properties.json');
 
 function openDb() {
-  const db = new sqlite3.Database(DB_PATH);
-  // Promisify helpers
-  db.runAsync = function (sql, params = []) {
-    return new Promise((resolve, reject) => {
-      this.run(sql, params, function (err) {
-        if (err) return reject(err);
-        resolve({ lastID: this.lastID, changes: this.changes });
-      });
-    });
+  // TURSO_DATABASE_URL in production; falls back to a local file for dev, so behavior is unchanged locally
+  const url = process.env.TURSO_DATABASE_URL || `file:${DB_PATH}`;
+  if (!process.env.TURSO_DATABASE_URL) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+  const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+
+  return {
+    async runAsync(sql, params = []) {
+      const result = await client.execute({ sql, args: params });
+      return { lastID: Number(result.lastInsertRowid || 0), changes: result.rowsAffected };
+    },
+    async getAsync(sql, params = []) {
+      const result = await client.execute({ sql, args: params });
+      return result.rows[0];
+    },
+    async allAsync(sql, params = []) {
+      const result = await client.execute({ sql, args: params });
+      return result.rows;
+    },
+    async execAsync(sql) {
+      await client.executeMultiple(sql);
+    },
   };
-  db.getAsync = promisify(db.get.bind(db));
-  db.allAsync = promisify(db.all.bind(db));
-  db.execAsync = promisify(db.exec.bind(db));
-  return db;
 }
 
 async function initSchema(db) {
@@ -152,11 +161,10 @@ async function initSchema(db) {
 }
 
 function deterministicPrice(idOrTitle) {
-  // Simple deterministic hash to get price between 45 and 300
   const s = String(idOrTitle);
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return 45 + (h % 256); // 45..300
+  return 45 + (h % 256);
 }
 
 function slugify(input) {
@@ -167,7 +175,7 @@ function slugify(input) {
 
 async function seedIfEmpty(db) {
   const row = await db.getAsync('SELECT COUNT(*) as c FROM properties');
-  if (row && row.c > 0) return; // already seeded
+  if (row && row.c > 0) return;
 
   if (!fs.existsSync(PROPS_JSON_PATH)) return;
   const raw = fs.readFileSync(PROPS_JSON_PATH, 'utf-8');
@@ -179,66 +187,50 @@ async function seedIfEmpty(db) {
     return;
   }
 
-  await new Promise((resolve, reject) => {
-    db.serialize(async () => {
-      try {
-        const usedSlugs = new Set();
-        for (const p of data) {
-          const hostName = p.host && p.host.name ? p.host.name : 'Unknown';
-          const hostPic = p.host && p.host.picture ? p.host.picture : null;
+  const usedSlugs = new Set();
+  for (const p of data) {
+    const hostName = p.host && p.host.name ? p.host.name : 'Unknown';
+    const hostPic = p.host && p.host.picture ? p.host.picture : null;
 
-          // Ensure owner user exists
-          let user = await db.getAsync('SELECT id FROM users WHERE name = ? AND IFNULL(picture, "") = IFNULL(?, "")', [hostName, hostPic]);
-          if (!user) {
-            const ins = await db.runAsync('INSERT INTO users(name, picture, role) VALUES (?,?,?)', [hostName, hostPic, 'owner']);
-            user = { id: ins.lastID };
-          }
+    let user = await db.getAsync('SELECT id FROM users WHERE name = ? AND IFNULL(picture, "") = IFNULL(?, "")', [hostName, hostPic]);
+    if (!user) {
+      const ins = await db.runAsync('INSERT INTO users(name, picture, role) VALUES (?,?,?)', [hostName, hostPic, 'owner']);
+      user = { id: ins.lastID };
+    }
 
-          // Prepare slug
-          const base = slugify(p.title || p.id || hostName);
-          let slug = base;
-          let n = 2;
-          while (usedSlugs.has(slug)) {
-            slug = `${base}-${n++}`;
-          }
-          usedSlugs.add(slug);
+    const base = slugify(p.title || p.id || hostName);
+    let slug = base;
+    let n = 2;
+    while (usedSlugs.has(slug)) {
+      slug = `${base}-${n++}`;
+    }
+    usedSlugs.add(slug);
 
-          // Insert property
-          const price = deterministicPrice(p.id || p.title || hostName);
-          const ratingAvg = p.rating ? Number(p.rating) : 0;
-          await db.runAsync(
-            'INSERT OR IGNORE INTO properties(id, title, slug, description, cover, location, host_id, rating_avg, price_per_night) VALUES (?,?,?,?,?,?,?,?,?)',
-            [p.id, p.title, slug, p.description || null, p.cover || null, p.location || null, user.id, ratingAvg, price]
-          );
+    const price = deterministicPrice(p.id || p.title || hostName);
+    const ratingAvg = p.rating ? Number(p.rating) : 0;
+    await db.runAsync(
+      'INSERT OR IGNORE INTO properties(id, title, slug, description, cover, location, host_id, rating_avg, price_per_night) VALUES (?,?,?,?,?,?,?,?,?)',
+      [p.id, p.title, slug, p.description || null, p.cover || null, p.location || null, user.id, ratingAvg, price]
+    );
 
-          // Pictures (ensure cover included)
-          const pics = new Set();
-          if (p.cover) pics.add(p.cover);
-          if (Array.isArray(p.pictures)) p.pictures.forEach(u => u && pics.add(u));
-          for (const url of pics) {
-            await db.runAsync('INSERT OR IGNORE INTO property_pictures(property_id, url) VALUES (?,?)', [p.id, url]);
-          }
+    const pics = new Set();
+    if (p.cover) pics.add(p.cover);
+    if (Array.isArray(p.pictures)) p.pictures.forEach(u => u && pics.add(u));
+    for (const url of pics) {
+      await db.runAsync('INSERT OR IGNORE INTO property_pictures(property_id, url) VALUES (?,?)', [p.id, url]);
+    }
 
-          // Equipments
-          if (Array.isArray(p.equipments)) {
-            for (const name of p.equipments) {
-              await db.runAsync('INSERT OR IGNORE INTO property_equipments(property_id, name) VALUES (?,?)', [p.id, name]);
-            }
-          }
-
-          // Tags
-          if (Array.isArray(p.tags)) {
-            for (const name of p.tags) {
-              await db.runAsync('INSERT OR IGNORE INTO property_tags(property_id, name) VALUES (?,?)', [p.id, name]);
-            }
-          }
-        }
-        resolve();
-      } catch (e) {
-        reject(e);
+    if (Array.isArray(p.equipments)) {
+      for (const name of p.equipments) {
+        await db.runAsync('INSERT OR IGNORE INTO property_equipments(property_id, name) VALUES (?,?)', [p.id, name]);
       }
-    });
-  });
+    }
+    if (Array.isArray(p.tags)) {
+      for (const name of p.tags) {
+        await db.runAsync('INSERT OR IGNORE INTO property_tags(property_id, name) VALUES (?,?)', [p.id, name]);
+      }
+    }
+  }
 }
 
 async function initialize() {
@@ -248,8 +240,4 @@ async function initialize() {
   return db;
 }
 
-module.exports = {
-  initialize,
-  openDb,
-  DB_PATH,
-};
+module.exports = { initialize, openDb, DB_PATH, slugify };

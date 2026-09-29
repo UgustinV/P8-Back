@@ -6,12 +6,12 @@
     "start": "node ./bin/www"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "cloudinary": "^2.11.0",
     "cookie-parser": "~1.4.4",
     "debug": "~2.6.9",
     "express": "5.1.0",
     "jsonwebtoken": "^9.0.2",
-    "morgan": "^1.10.1",
-    "multer": "^2.0.2",
-    "sqlite3": "^5.1.7"
+    "morgan": "^1.10.1"
   }
 }
