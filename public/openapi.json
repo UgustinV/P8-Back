@@ -15,6 +15,7 @@
     { "name": "Users" },
     { "name": "Ratings" },
     { "name": "Favorites" },
+    { "name": "Messages" },
     { "name": "Uploads" }
   ],
   "paths": {
@@ -296,6 +297,95 @@
         }
       }
     },
+    "/api/conversations": {
+      "get": {
+        "tags": ["Messages"],
+        "summary": "List conversations for the current user",
+        "security": [ { "BearerAuth": [] } ],
+        "responses": {
+          "200": { "description": "Array of conversations", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ConversationSummary" } } } } },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "post": {
+        "tags": ["Messages"],
+        "summary": "Start (or reuse) a conversation with another user",
+        "security": [ { "BearerAuth": [] } ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConversationCreate" },
+              "examples": {
+                "withInitialMessage": { "summary": "Contacter un hôte à propos d'une annonce", "value": { "recipient_id": 2, "property_id": "abc123", "message": "Bonjour, le logement est-il disponible ?" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Conversation (created or existing)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Conversation" } } } },
+          "400": { "description": "Validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Recipient or property not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/conversations/{id}": {
+      "get": {
+        "tags": ["Messages"],
+        "summary": "Get a conversation (must be a participant)",
+        "security": [ { "BearerAuth": [] } ],
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "responses": {
+          "200": { "description": "Conversation", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Conversation" } } } },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Conversation not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/conversations/{id}/messages": {
+      "get": {
+        "tags": ["Messages"],
+        "summary": "List messages in a conversation",
+        "security": [ { "BearerAuth": [] } ],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "default": 50, "maximum": 200 } },
+          { "name": "before_id", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Return messages with id less than this (pagination cursor)" }
+        ],
+        "responses": {
+          "200": { "description": "Array of messages, oldest first", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Message" } } } } },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Conversation not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "post": {
+        "tags": ["Messages"],
+        "summary": "Send a message in a conversation",
+        "security": [ { "BearerAuth": [] } ],
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageCreate" } } } },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Message" } } } },
+          "400": { "description": "Validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Conversation not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/conversations/{id}/read": {
+      "post": {
+        "tags": ["Messages"],
+        "summary": "Mark a conversation as read (current user)",
+        "security": [ { "BearerAuth": [] } ],
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+        "responses": {
+          "200": { "description": "Marked as read", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } },
+          "401": { "description": "Authentication required", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Conversation not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/api/uploads/image": {
       "post": {
         "tags": ["Uploads"],
@@ -535,6 +625,65 @@
           "ratings": { "type": "array", "items": { "$ref": "#/components/schemas/Rating" } }
         },
         "required": ["rating_avg", "ratings_count", "ratings"]
+      },
+      "ConversationParticipant": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "picture": { "type": "string", "nullable": true },
+          "role": { "type": "string", "enum": ["owner", "client", "admin"] }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "conversation_id": { "type": "integer" },
+          "sender_id": { "type": "integer" },
+          "body": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "conversation_id", "sender_id", "body"]
+      },
+      "MessageCreate": {
+        "type": "object",
+        "required": ["body"],
+        "properties": {
+          "body": { "type": "string", "minLength": 1 }
+        }
+      },
+      "Conversation": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "property_id": { "type": "string", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "participants": { "type": "array", "items": { "$ref": "#/components/schemas/ConversationParticipant" } }
+        },
+        "required": ["id", "participants"]
+      },
+      "ConversationSummary": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Conversation" },
+          {
+            "type": "object",
+            "properties": {
+              "last_message": { "allOf": [ { "$ref": "#/components/schemas/Message" } ], "nullable": true },
+              "unread_count": { "type": "integer" }
+            }
+          }
+        ]
+      },
+      "ConversationCreate": {
+        "type": "object",
+        "required": ["recipient_id"],
+        "properties": {
+          "recipient_id": { "type": "integer", "description": "User id to start a conversation with" },
+          "property_id": { "type": "string", "nullable": true, "description": "Optional: link conversation to a property" },
+          "message": { "type": "string", "nullable": true, "description": "Optional: send an initial message immediately" }
+        }
       },
       "UploadResponse": {
         "type": "object",

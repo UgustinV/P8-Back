@@ -105,6 +105,35 @@ async function initSchema(db) {
     FOREIGN KEY(property_id) REFERENCES properties(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    property_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(property_id) REFERENCES properties(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS conversation_participants (
+    conversation_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    last_read_at DATETIME,
+    PRIMARY KEY (conversation_id, user_id),
+    FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    sender_id INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_conversation_participants_user ON conversation_participants(user_id);
+  CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
   CREATE INDEX IF NOT EXISTS idx_properties_host ON properties(host_id);
   CREATE INDEX IF NOT EXISTS idx_ratings_property ON ratings(property_id);
   CREATE INDEX IF NOT EXISTS idx_ratings_user ON ratings(user_id);

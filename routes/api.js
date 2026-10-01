@@ -8,6 +8,7 @@ const users = require('../controllers/usersController');
 const ratings = require('../controllers/ratingsController');
 const favorites = require('../controllers/favoritesController');
 const uploads = require('../controllers/uploadsController');
+const messages = require('../controllers/messagesController');
 
 // Ensure DB is ready for all API routes
 router.use(dbReady);
@@ -37,5 +38,13 @@ router.get('/users/:id/favorites', requireSelfOrAdmin('id'), favorites.listForUs
 
 // Delete one or multiple uploaded images by filename or URL
 router.delete('/uploads/images', requireRole(['owner','admin']), uploads.deleteImages);
+
+// Messages
+router.post('/conversations', requireAuth, messages.create);
+router.get('/conversations', requireAuth, messages.listMine);
+router.get('/conversations/:id', requireAuth, messages.getById);
+router.get('/conversations/:id/messages', requireAuth, messages.listConversationMessages);
+router.post('/conversations/:id/messages', requireAuth, messages.sendConversationMessage);
+router.post('/conversations/:id/read', requireAuth, messages.markConversationRead);
 
 module.exports = router;
